@@ -90,6 +90,17 @@ sudo chown -R 1026:100 opencodex-data
 
 If you use different values in `.env`, use those values in `chown` instead.
 
+## First-start configuration
+
+The image contains a default hub config (`hostname: 0.0.0.0`, port `10100`).
+Bind mounts hide files baked into an image, so on first start the entrypoint
+copies that default to `opencodex-data/opencodex/config.json` when the file is
+missing. An existing `config.json` is never overwritten.
+
+The startup log always prints `http://localhost:10100`; that text is hard-coded
+upstream and does not show the real bind address. Because the hub listens on
+`0.0.0.0`, it refuses to start without the data-plane token created below.
+
 ## First-time OpenCodex token initialization
 
 After pulling the image and before normal startup:

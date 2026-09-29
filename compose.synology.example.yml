@@ -11,33 +11,24 @@ services:
 
   opencodex:
     image: ghcr.io/YOUR_GITHUB_USERNAME/opencodex:latest
-
     user: "${OPENCODEX_UID}:${OPENCODEX_GID}"
     group_add:
       - "${OPENCODEX_EXTRA_GID}"
-
     init: true
     read_only: true
-
     ports:
       - "0.0.0.0:10100:10100"
-
     environment:
       HOME: /home/bun
       CODEX_HOME: /home/bun/.codex
-
     volumes:
       - "./opencodex-data/opencodex:/home/bun/.opencodex"
       - "./opencodex-data/codex:/home/bun/.codex"
-
     tmpfs:
       - /tmp:size=64m,mode=1777
-
     security_opt:
       - no-new-privileges:true
-
     cap_drop:
       - ALL
-
     restart: unless-stopped
     stop_grace_period: 30s
