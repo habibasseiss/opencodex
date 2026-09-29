@@ -9,7 +9,8 @@ different hosts without rebuilding it.
 
 ## What the workflow does
 
-Every day, and whenever you manually run the workflow, GitHub Actions:
+Every day, on every push to `main`, and whenever you manually run the workflow,
+GitHub Actions:
 
 1. Checks out this repository.
 2. Checks out the latest stable `lidge-jun/opencodex` release tag.
