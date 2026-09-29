@@ -21,11 +21,27 @@ jobs:
       - name: Check out builder repository
         uses: actions/checkout@v4
 
+      - name: Resolve latest upstream release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="$(gh api repos/lidge-jun/opencodex/releases/latest --jq .tag_name)"
+          if [ -z "$TAG" ]; then
+            echo "Could not resolve the latest upstream release" >&2
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Check out upstream OpenCodex
         uses: actions/checkout@v4
         with:
           repository: lidge-jun/opencodex
-          ref: main
+          ref: ${{ steps.release.outputs.tag }}
           path: upstream
           fetch-depth: 1
 
@@ -37,7 +53,9 @@ jobs:
 
           SHA="$(git -C upstream rev-parse HEAD)"
           SHORT_SHA="$(git -C upstream rev-parse --short=12 HEAD)"
-          VERSION="$(jq -r '.version // empty' upstream/package.json)"
+          # Use the released tag, not package.json: main's package.json can be ahead of any release.
+          VERSION="${{ steps.release.outputs.tag }}"
+          VERSION="${VERSION#v}"
 
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"

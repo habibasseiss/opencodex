@@ -12,7 +12,7 @@ different hosts without rebuilding it.
 Every day, and whenever you manually run the workflow, GitHub Actions:
 
 1. Checks out this repository.
-2. Checks out `lidge-jun/opencodex` from `main`.
+2. Checks out the latest stable `lidge-jun/opencodex` release tag.
 3. Appends a tiny generic runtime stage to the upstream Dockerfile.
 4. Builds only `linux/amd64` using BuildKit.
 5. Publishes the image to:
@@ -22,7 +22,8 @@ Every day, and whenever you manually run the workflow, GitHub Actions:
 It publishes:
 
 - `latest`
-- the upstream package version, when available
+- the upstream release version (a re-run without a new release overwrites this
+  tag)
 - `sha-<upstream-commit>`
 
 No personal access token is needed for publishing from the workflow. It uses the
@@ -105,7 +106,7 @@ docker compose up -d
 
 ## Updating OpenCodex on Synology
 
-The GitHub workflow rebuilds `latest` daily from upstream `main`.
+The GitHub workflow rebuilds `latest` daily from the latest upstream release.
 
 To update the running NAS container:
 
