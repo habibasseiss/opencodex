@@ -79,6 +79,61 @@ group_add:
 
 The GitHub Actions workflow and image do not know or care about these IDs.
 
+## Container network (IPv6)
+
+The Compose example puts both services on a user-defined network that has IPv6
+enabled:
+
+```yaml
+services:
+  9router:
+    networks:
+      - agent-net
+  opencodex:
+    networks:
+      - agent-net
+
+networks:
+  agent-net:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:5:5::/64
+```
+
+This is not decoration. Before binding, opencodex probes its configured port on
+both loopback families (`127.0.0.1` and `::1`) to prove no other instance owns
+this home. On a bridge network without IPv6 the `::1` connect fails as "network
+unreachable" rather than "connection refused", which the probe cannot classify;
+it fails closed and starts as a **sibling instance**. A sibling still answers
+reads but refuses every management mutation that rewrites client state, so the
+dashboard reports 409s such as `Mode switch failed (HTTP 409).`, and the Codex
+device re-login fails for no visible reason. The startup log names the cause:
+
+```text
+A shared-client owner could not be verified (a managed client port answered but its listener
+could not be classified); treating this instance as a sibling so Codex, Grok and Claude configs
+are left alone.
+```
+
+The explicit ULA subnet is required because Docker only auto-assigns an IPv6
+prefix when its default address pools contain one; Synology's Container Manager
+configures IPv4-only pools, so `enable_ipv6: true` alone fails with `could not
+find an available, non-overlapping IPv6 address pool among the defaults to
+assign to the network`.
+
+Verify after starting:
+
+```bash
+docker compose exec opencodex sh -lc 'cat /proc/net/if_inet6 >/dev/null && echo "IPv6 present" || echo "no IPv6"'
+docker compose logs opencodex | grep -i sibling
+```
+
+`IPv6 present` and no sibling line mean the proxy started as the owner. A
+loopback `openai_base_url` in the container's Codex config is what turns
+opencodex's own port into a candidate in the first place; this network is what
+keeps such a line harmless.
+
 ## Prepare local state directories
 
 On the Synology:
@@ -116,6 +171,53 @@ Then:
 ```bash
 docker compose up -d
 ```
+
+## Sign in an OpenAI account (headless)
+
+The container has no browser, so sign in with the device flow against the
+ChatGPT/Codex account pool:
+
+```bash
+docker compose exec opencodex bun run src/cli/index.ts account login openai --device
+```
+
+Open the printed `https://auth.openai.com/codex/device` URL on any machine and
+enter the code it shows. The account lands in `opencodex-data/opencodex`, so it
+survives container rebuilds, and it appears on the dashboard's Codex Auth page,
+where you select it as the active account and refresh its quota. The dashboard's
+Add button drives the same flow.
+
+The main card's **Re-login with device code** is a *re*-authentication of an
+existing native `__main__` credential, not an enrollment. A fresh container has
+none — `account main doctor` reports `authStatus: missing` — so that control
+fails with `native_main_unavailable` ("enrollment is the native profile
+workflow"). That is the proxy refusing an unsatisfiable request, not a broken
+deployment; use the pool login above. If you also need the native slot populated
+because some tool reads `$CODEX_HOME/auth.json` directly, copy a working
+`auth.json` from a machine already signed into Codex to
+`opencodex-data/codex/auth.json`, `chown 1026:100` and `chmod 600` it, then
+recreate the container. ChatGPT refresh tokens rotate, so sign that source login
+out afterwards.
+
+## Dashboard access from the LAN
+
+At `http://<nas-ip>:10100` the dashboard is a non-loopback (remote) bind, so it
+keeps the admin token only in page memory: the browser asks for it again after
+every reload, and the page's first data loads return 401 until you paste it.
+Both are expected; a 401 from `opencodex-session` on a LAN address is by design,
+because the loopback bootstrap does not mint a session when data-plane
+authentication is required. Read the token from the container — the
+`OPENCODEX_ADMIN_AUTH_TOKEN` environment value wins when it is set:
+
+```bash
+docker compose exec opencodex cat /home/bun/.opencodex/admin-api-token
+```
+
+Let the browser's password manager save it, or put the dashboard behind HTTPS
+(for example Tailscale Serve) and pair the browser with `ocx gui pair`; pairing
+over plain HTTP on a non-loopback origin is refused by design. This is the
+management token, separate from the data-plane token created above, and it does
+not belong in logs, screenshots, or issues.
 
 ## Updating OpenCodex on Synology
 

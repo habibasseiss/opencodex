@@ -4,13 +4,15 @@ services:
     ports:
       - "20128:20128"
     volumes:
-      - "./data:/app/data"
+      - "./9router-data:/app/data"
     environment:
       DATA_DIR: /app/data
+      INITIAL_PASSWORD: ${ROUTER_PASSWORD}
+    networks: [agent-net]
     restart: unless-stopped
 
   opencodex:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/opencodex:latest
+    image: ghcr.io/<YOUR_GITHUB_USERNAME>/opencodex:latest
     user: "${OPENCODEX_UID}:${OPENCODEX_GID}"
     group_add:
       - "${OPENCODEX_EXTRA_GID}"
@@ -32,3 +34,11 @@ services:
       - ALL
     restart: unless-stopped
     stop_grace_period: 30s
+    networks: [agent-net]
+
+networks:
+  agent-net:
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:5:5::/64
