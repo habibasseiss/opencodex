@@ -51,9 +51,6 @@ jobs:
           set -euo pipefail
           echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opencodex" >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -70,7 +67,7 @@ jobs:
           context: ./upstream
           file: ./upstream/Dockerfile
           target: runtime
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           pull: true
           provenance: false
