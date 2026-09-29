@@ -14,17 +14,18 @@ GitHub Actions:
 
 1. Checks out this repository.
 2. Checks out the latest stable `lidge-jun/opencodex` release tag.
-3. Appends a tiny generic runtime stage to the upstream Dockerfile.
-4. Builds only `linux/amd64` using BuildKit.
-5. Publishes the image to:
+3. Stops here if an image for that upstream commit is already published (unless
+   the manual run has **force** enabled).
+4. Appends a tiny generic runtime stage to the upstream Dockerfile.
+5. Builds only `linux/amd64` using BuildKit.
+6. Publishes the image to:
 
    `ghcr.io/<your-github-username>/opencodex`
 
 It publishes:
 
 - `latest`
-- the upstream release version (a re-run without a new release overwrites this
-  tag)
+- the upstream release version
 - `sha-<upstream-commit>`
 
 No personal access token is needed for publishing from the workflow. It uses the

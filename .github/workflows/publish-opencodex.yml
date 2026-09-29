@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if this upstream release is already published
+        type: boolean
+        default: false
   schedule:
     - cron: "17 4 * * *"
 
@@ -64,16 +69,6 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare generic runtime Dockerfile
-        shell: bash
-        run: |
-          set -euo pipefail
-          cp upstream/Dockerfile upstream/Dockerfile.runtime
-          cat docker/runtime-tail.Dockerfile >> upstream/Dockerfile.runtime
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -81,8 +76,39 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check for an existing image
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:sha-${{ steps.upstream.outputs.short_sha }}"
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "Forced rebuild requested."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          elif docker buildx imagetools inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "$IMAGE already exists; no upstream update, skipping build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "$IMAGE not found; building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Prepare generic runtime Dockerfile
+        if: steps.check.outputs.build == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp upstream/Dockerfile upstream/Dockerfile.runtime
+          cat docker/runtime-tail.Dockerfile >> upstream/Dockerfile.runtime
+
+      - name: Set up Docker Buildx
+        if: steps.check.outputs.build == 'true'
+        uses: docker/setup-buildx-action@v3
+
       - name: Docker metadata
         id: meta
+        if: steps.check.outputs.build == 'true'
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -92,6 +118,7 @@ jobs:
             type=raw,value=${{ steps.upstream.outputs.version }},enable=${{ steps.upstream.outputs.version != '' }}
 
       - name: Build and publish
+        if: steps.check.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: upstream
