@@ -26,6 +26,18 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      - name: Validate runtime identity variables
+        shell: bash
+        env:
+          OPENCODEX_UID: ${{ vars.OPENCODEX_UID }}
+          OPENCODEX_GID: ${{ vars.OPENCODEX_GID }}
+        run: |
+          set -euo pipefail
+          : "${OPENCODEX_UID:?Set repository variable OPENCODEX_UID}"
+          : "${OPENCODEX_GID:?Set repository variable OPENCODEX_GID}"
+          [[ "$OPENCODEX_UID" =~ ^[0-9]+$ ]] || { echo "OPENCODEX_UID must be numeric" >&2; exit 1; }
+          [[ "$OPENCODEX_GID" =~ ^[0-9]+$ ]] || { echo "OPENCODEX_GID must be numeric" >&2; exit 1; }
+
       - name: Check out upstream OpenCodex
         uses: actions/checkout@v6
         with:
@@ -43,6 +55,27 @@ jobs:
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Add configurable Synology runtime stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> upstream/Dockerfile <<'EOF_DOCKER'
+
+          # GHCR wrapper: run OpenCodex with a configurable numeric UID/GID.
+          # Bun resolves/walks ancestor directories of the current working directory, so keep
+          # /home/bun and /home/bun/app traversable by the selected runtime identity.
+          FROM runtime AS synology-runtime
+          ARG RUNTIME_UID
+          ARG RUNTIME_GID
+          USER root
+          RUN test -n "$RUNTIME_UID" \
+            && test -n "$RUNTIME_GID" \
+            && chmod 0755 /home /home/bun /home/bun/app \
+            && chown "$RUNTIME_UID:$RUNTIME_GID" /home/bun/.opencodex /home/bun/.codex
+          ENV HOME=/home/bun
+          USER ${RUNTIME_UID}:${RUNTIME_GID}
+          EOF_DOCKER
 
       - name: Set image name
         id: image
@@ -66,7 +99,7 @@ jobs:
         with:
           context: ./upstream
           file: ./upstream/Dockerfile
-          target: runtime
+          target: synology-runtime
           platforms: linux/amd64
           push: true
           pull: true
@@ -74,13 +107,15 @@ jobs:
           sbom: false
           build-args: |
             BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+            RUNTIME_UID=${{ vars.OPENCODEX_UID }}
+            RUNTIME_GID=${{ vars.OPENCODEX_GID }}
           tags: |
             ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ steps.upstream.outputs.version }}
             ${{ steps.image.outputs.name }}:sha-${{ steps.upstream.outputs.short_sha }}
           labels: |
             org.opencontainers.image.title=OpenCodex
-            org.opencontainers.image.description=Automated container build of lidge-jun/opencodex
+            org.opencontainers.image.description=Automated Synology-compatible container build of lidge-jun/opencodex
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/lidge-jun/opencodex
             org.opencontainers.image.revision=${{ steps.upstream.outputs.sha }}

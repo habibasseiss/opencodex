@@ -8,10 +8,12 @@ BuildKit, and publishes the result to GitHub Container Registry (GHCR).
 
 ## What it publishes
 
-The workflow publishes a multi-platform image for:
+The workflow publishes an x86-64 image for:
 
 - `linux/amd64`
-- `linux/arm64`
+
+QEMU is not used; the workflow builds only for the native x86-64 architecture of
+GitHub's hosted Linux runner.
 
 The image name is:
 
@@ -36,11 +38,17 @@ Actions tab, and also runs when the workflow file itself is pushed to `main`.
    also want the GHCR image to be public.
 2. Upload all files from this ZIP, including the hidden `.github` directory, and
    commit them to `main`.
-3. Open **Actions → Publish OpenCodex image → Run workflow** for the first build
-   (a push of the workflow file to `main` should also trigger it).
-4. After the build succeeds, open your GitHub profile/organization's
+3. In the repository, open **Settings → Secrets and variables → Actions →
+   Variables** and create:
+   - `OPENCODEX_UID` — for your NAS this is `1026`
+   - `OPENCODEX_GID` — for your NAS this is `100`
+4. Open **Actions → Publish OpenCodex image → Run workflow** for the first build
+   (a push of the workflow file to `main` should also trigger it). The workflow
+   fails early with a clear message if either variable is missing or
+   non-numeric.
+5. After the build succeeds, open your GitHub profile/organization's
    **Packages** section and select the `opencodex` package.
-5. If you want your Synology to pull without authenticating, change the package
+6. If you want your Synology to pull without authenticating, change the package
    visibility to **Public**.
 
 No personal access token is required for the workflow itself. It publishes with
@@ -61,6 +69,13 @@ YOUR_GITHUB_USERNAME
 
 with the lowercase GitHub user or organization that owns the package.
 
+The published image adds a tiny Synology-specific final stage on top of the
+upstream runtime. Its numeric UID and GID come from the GitHub repository
+variables `OPENCODEX_UID` and `OPENCODEX_GID`. The stage makes `/home/bun` and
+the application working directory traversable by that identity and keeps
+OpenCodex's expected home paths. This avoids Bun's `CouldntReadCurrentDirectory`
+failure when the runtime UID cannot traverse an ancestor directory.
+
 The OpenCodex service stores its persistent data locally under:
 
 ```text
@@ -68,14 +83,22 @@ The OpenCodex service stores its persistent data locally under:
 ./opencodex-data/codex
 ```
 
-and listens on all NAS interfaces on port `10100`.
+and listens on all NAS interfaces on port `10100`. With the example repository
+variables above, the image runs OpenCodex as UID `1026`, GID `100`; Compose only
+adds supplementary group `101` (`administrators`) for Synology ACL
+compatibility. Do not add a separate `user:` override unless you intentionally
+change the image's runtime identity.
 
 Create the directories before the first start:
 
 ```bash
 mkdir -p opencodex-data/opencodex opencodex-data/codex
-sudo chown -R 1000:1000 opencodex-data
+sudo chown -R 1026:100 opencodex-data
 ```
+
+If `opencodex-data` already exists from an earlier run, the `chown` is
+important: OpenCodex creates lock/state files under `/home/bun/.opencodex`, and
+UID `1026` must be able to write them.
 
 Pull the image:
 
@@ -160,6 +183,8 @@ OpenCodex is maintained at:
 
 <https://github.com/lidge-jun/opencodex>
 
-This builder does not modify OpenCodex; it builds the upstream Dockerfile as
-published by that project. OpenCodex is licensed under the MIT License. Review
-the upstream project and provider terms before use.
+This builder does not change OpenCodex application code. During CI it appends a
+small final Docker stage that accepts the repository-configured runtime UID/GID
+as Docker build arguments, adjusts directory permissions for that identity, then
+builds that target. OpenCodex is licensed under the MIT License. Review the
+upstream project and provider terms before use.

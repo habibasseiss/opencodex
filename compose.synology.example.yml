@@ -11,12 +11,20 @@ services:
 
   opencodex:
     # Replace YOUR_GITHUB_USERNAME with your GitHub username/organization in lowercase.
+    # The image runtime UID/GID are configured at build time using GitHub repository variables.
     image: ghcr.io/YOUR_GITHUB_USERNAME/opencodex:latest
+
+    # Keep the Synology administrators group as a supplementary numeric group if needed
+    # by ACLs on the bind-mounted folders. Change/remove this if your NAS differs.
+    group_add:
+      - "101"
+
     init: true
     read_only: true
     ports:
       - "0.0.0.0:10100:10100"
     environment:
+      HOME: /home/bun
       CODEX_HOME: /home/bun/.codex
     volumes:
       - "./opencodex-data/opencodex:/home/bun/.opencodex"
