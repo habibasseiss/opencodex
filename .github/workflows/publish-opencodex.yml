@@ -1,0 +1,93 @@
+name: Publish OpenCodex image
+
+on:
+  schedule:
+    # Daily at 03:23 UTC. The non-round minute avoids the busiest scheduler times.
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-opencodex.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: opencodex-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish OpenCodex
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out upstream OpenCodex
+        uses: actions/checkout@v6
+        with:
+          repository: lidge-jun/opencodex
+          ref: main
+          path: upstream
+          fetch-depth: 1
+
+      - name: Read upstream metadata
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd upstream
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r '.version' package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/opencodex" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: ./upstream
+          file: ./upstream/Dockerfile
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          pull: true
+          provenance: false
+          sbom: false
+          build-args: |
+            BUILDKIT_CONTEXT_KEEP_GIT_DIR=1
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ steps.upstream.outputs.version }}
+            ${{ steps.image.outputs.name }}:sha-${{ steps.upstream.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.title=OpenCodex
+            org.opencontainers.image.description=Automated container build of lidge-jun/opencodex
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.url=https://github.com/lidge-jun/opencodex
+            org.opencontainers.image.revision=${{ steps.upstream.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.upstream.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=opencodex
+          cache-to: type=gha,mode=max,scope=opencodex
